@@ -608,8 +608,7 @@ void msm_cpp_do_tasklet(unsigned long data)
 			if (tx_fifo[i] == MSM_CPP_MSG_ID_CMD) {
 				cmd_len = tx_fifo[i+1];
 				msg_id = tx_fifo[i+2];
-				if (msg_id == MSM_CPP_MSG_ID_FRAME_ACK
-					&& (atomic_read(&cpp_timer.used))) {
+				if (msg_id == MSM_CPP_MSG_ID_FRAME_ACK) {
 					CPP_DBG("Frame done!!\n");
 					/* delete CPP timer */
 					CPP_DBG("delete timer.\n");
@@ -618,9 +617,8 @@ void msm_cpp_do_tasklet(unsigned long data)
 					del_timer(&timer->cpp_timer);
 					timer->data.processed_frame = NULL;
 					msm_cpp_notify_frame_done(cpp_dev);
-				} else if ((msg_id ==
-					MSM_CPP_MSG_ID_FRAME_NACK)
-					&& (atomic_read(&cpp_timer.used))) {
+				} else if (msg_id ==
+					MSM_CPP_MSG_ID_FRAME_NACK) {
 					pr_err("NACK error from hw!!\n");
 					CPP_DBG("delete timer.\n");
 					timer = &cpp_timer;
@@ -1145,13 +1143,7 @@ static void msm_cpp_do_timeout_work(struct work_struct *work)
 
 	disable_irq(cpp_timer.data.cpp_dev->irq->start);
 	pr_err("Reloading firmware\n");
-	if (!atomic_read(&cpp_timer.used)) {
-		pr_err("Delayed trigger, IRQ serviced\n");
-		return;
-	}
-	atomic_set(&cpp_timer.used, 0);
-	cpp_load_fw(cpp_timer.data.cpp_dev,
-		cpp_timer.data.cpp_dev->fw_name_bin);
+	cpp_load_fw(cpp_timer.data.cpp_dev, NULL);
 	pr_err("Firmware loading done\n");
 	enable_irq(cpp_timer.data.cpp_dev->irq->start);
 	msm_camera_io_w_mb(0x8, cpp_timer.data.cpp_dev->base +
@@ -1159,6 +1151,11 @@ static void msm_cpp_do_timeout_work(struct work_struct *work)
 	msm_camera_io_w_mb(0xFFFF,
 		cpp_timer.data.cpp_dev->base +
 		MSM_CPP_MICRO_IRQGEN_CLR);
+
+	if (!atomic_read(&cpp_timer.used)) {
+		pr_err("Delayed trigger, IRQ serviced\n");
+		return;
+	}
 
 	this_frame = cpp_timer.data.processed_frame;
 	pr_err("ReInstalling cpp_timer\n");
@@ -1638,11 +1635,8 @@ long msm_cpp_subdev_ioctl(struct v4l2_subdev *sd,
 			}
 
 			kfree(process_frame->cpp_cmd_msg);
-			process_frame->cpp_cmd_msg = NULL;
 			kfree(process_frame);
-			process_frame = NULL;
 			kfree(event_qcmd);
-			event_qcmd = NULL;
 		} else {
 			pr_err("Empty command list\n");
 			mutex_unlock(&cpp_dev->mutex);
